@@ -25,13 +25,6 @@
 
 #define DMAR_TYPE_DRHD  0  /* DMA Remapping Hardware Unit Definition */
 
-struct acpi_dmar {
-    struct acpi_sdt_hdr hdr;
-    uint8_t host_address_width;
-    uint8_t flags;
-    uint8_t reserved[10];
-} __attribute__((packed));
-
 struct dmar_header {
     uint16_t type;
     uint16_t length;
@@ -173,7 +166,7 @@ static int vtd_disable_all(void) {
 
     dmar = (struct acpi_dmar *)tbl.hdr;
     printf("DMAR: found table, host_address_width=%d, flags=0x%02x\n",
-           dmar->host_address_width, dmar->flags);
+           dmar->haw, dmar->flags);
 
     ptr = (uint8_t *)dmar + sizeof(struct acpi_dmar);
     end = (uint8_t *)dmar + dmar->hdr.length;

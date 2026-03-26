@@ -27,6 +27,10 @@ struct bios_proxy_mailbox {
     uint32_t arg_ecx;
     uint32_t result;
     uint32_t helper_core_id;
+    /* UEFI reset callback fields (populated by CSMWrap) */
+    uint32_t reset_cr3;
+    uint32_t reset_fn_lo;
+    uint32_t reset_fn_hi;
 };
 
 /* Separately allocated stack for helper core */
@@ -59,6 +63,62 @@ static uintptr_t get_lapic_base(void)
 static struct bios_proxy_mailbox *mailbox = NULL;
 static uintptr_t mailbox_offset = 0;
 static int selected_ap_id = -1;
+static uint64_t reset_cr3_value = 0;
+
+/*
+ * Build minimal identity-mapping page tables for the 64-bit reset path.
+ * Maps the first 4GB using 2MB pages (works on all x86-64 CPUs).
+ *
+ * Layout (6 pages = 24KB):
+ *   Page 0: PML4  (1 entry → PDPT)
+ *   Page 1: PDPT  (4 entries → PD[0..3])
+ *   Pages 2-5: PD[0..3] (512 × 2MB entries each = 1GB per PD)
+ */
+#define PT_P    (1ULL << 0)     /* Present */
+#define PT_RW   (1ULL << 1)     /* Read/Write */
+#define PT_PS   (1ULL << 7)     /* Page Size (2MB) */
+#define RESET_PT_PAGES 6
+
+static int build_reset_page_tables(void)
+{
+    EFI_PHYSICAL_ADDRESS pt_addr = 0xFFFFFFFF;
+    EFI_STATUS status = gBS->AllocatePages(
+        AllocateMaxAddress,
+        EfiRuntimeServicesData,
+        RESET_PT_PAGES,
+        &pt_addr
+    );
+    if (EFI_ERROR(status)) {
+        printf("Failed to allocate reset page tables\n");
+        return -1;
+    }
+
+    memset((void *)(uintptr_t)pt_addr, 0, RESET_PT_PAGES * 4096);
+
+    uint64_t *pml4 = (uint64_t *)(uintptr_t)pt_addr;
+    uint64_t *pdpt = (uint64_t *)(uintptr_t)(pt_addr + 0x1000);
+
+    /* PML4[0] → PDPT */
+    pml4[0] = (pt_addr + 0x1000) | PT_P | PT_RW;
+
+    /* PDPT[0..3] → PD[0..3], each covering 1GB */
+    for (int i = 0; i < 4; i++) {
+        uint64_t pd_phys = pt_addr + 0x2000 + (uint64_t)i * 0x1000;
+        pdpt[i] = pd_phys | PT_P | PT_RW;
+
+        /* Fill PD with 512 × 2MB identity-mapped pages */
+        uint64_t *pd = (uint64_t *)(uintptr_t)pd_phys;
+        for (int j = 0; j < 512; j++) {
+            uint64_t phys = ((uint64_t)i * 512 + j) * 0x200000ULL;
+            pd[j] = phys | PT_P | PT_RW | PT_PS;
+        }
+    }
+
+    reset_cr3_value = pt_addr;
+    printf("Reset page tables at %p (4GB identity map, 2MB pages)\n",
+           (void *)(uintptr_t)pt_addr);
+    return 0;
+}
 
 /* Detect if running in x2APIC mode */
 static int is_x2apic_mode(void)
@@ -551,6 +611,11 @@ int bios_proxy_init(void *csm_base, size_t csm_size, void *rsdp_copy)
         }
     }
 
+    /* Build identity-mapping page tables for the 64-bit reset path */
+    if (build_reset_page_tables() < 0) {
+        printf("Warning: UEFI reset callback will not be available\n");
+    }
+
     /* Allocate stack for helper core (must be < 4GB) */
     EFI_PHYSICAL_ADDRESS stack_addr = 0xFFFFFFFF;
     EFI_STATUS status = gBS->AllocatePages(
@@ -585,6 +650,21 @@ int bios_proxy_start_helper(uintptr_t csm_final_base)
     }
 
     mailbox = (struct bios_proxy_mailbox *)(csm_final_base + mailbox_offset);
+
+    /* Populate UEFI reset callback fields in the mailbox */
+    if (reset_cr3_value && gRT && gRT->ResetSystem) {
+        uint64_t fn = (uint64_t)(uintptr_t)gRT->ResetSystem;
+        mailbox->reset_cr3 = (uint32_t)reset_cr3_value;
+        mailbox->reset_fn_lo = (uint32_t)fn;
+        mailbox->reset_fn_hi = (uint32_t)(fn >> 32);
+        printf("UEFI ResetSystem callback at %p (CR3=%p)\n",
+               (void *)(uintptr_t)fn, (void *)(uintptr_t)reset_cr3_value);
+    } else {
+        mailbox->reset_cr3 = 0;
+        mailbox->reset_fn_lo = 0;
+        mailbox->reset_fn_hi = 0;
+        printf("Warning: UEFI ResetSystem callback not available\n");
+    }
 
     if (!helper_stack_buffer) {
         return -1;

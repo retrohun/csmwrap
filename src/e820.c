@@ -180,7 +180,8 @@ static uint32_t convert_memory_type(EFI_MEMORY_TYPE type)
 
 static inline void cmos_write(uint8_t reg, uint8_t val)
 {
-    outb(0x70, reg);
+    outb(0x70, 0x80 | reg);
+    outb(0x80, 0);
     outb(0x71, val);
 }
 

@@ -91,8 +91,16 @@ struct ivrs_header {
 /*
  * AMD IOMMU Register Offsets
  */
-#define AMD_IOMMU_CTRL_REG  0x18
-#define AMD_IOMMU_CTRL_EN   (1ULL << 0)
+#define AMD_IOMMU_CTRL_REG       0x18
+#define AMD_IOMMU_CTRL_EN        (1ULL << 0)
+#define AMD_IOMMU_CTRL_EVT_LOG   (1ULL << 2)
+#define AMD_IOMMU_CTRL_EVT_INT   (1ULL << 3)
+#define AMD_IOMMU_CTRL_CMDBUF    (1ULL << 12)
+#define AMD_IOMMU_CTRL_PPR_LOG   (1ULL << 13)
+#define AMD_IOMMU_CTRL_PPR_INT   (1ULL << 14)
+#define AMD_IOMMU_CTRL_PPR       (1ULL << 15)
+#define AMD_IOMMU_CTRL_GA_LOG    (1ULL << 28)
+#define AMD_IOMMU_CTRL_GA_INT    (1ULL << 29)
 
 /*
  * Disable a single Intel VT-d IOMMU unit
@@ -223,9 +231,15 @@ static bool amd_iommu_disable_unit(uint64_t iommu_base) {
         return true;
     }
 
-    /* Clear IommuEn (bit 0). Takes effect immediately, no polling needed
-     * (unlike Intel VT-d) — the AMD IOMMU has no split command/status
-     * architecture. Matches Linux, Xen, and EDK2 behavior. */
+    /* Disable command buffer, logs and their interrupts first, then the
+     * IOMMU itself. Matches Linux's order in drivers/iommu/amd/init.c. */
+    ctrl &= ~(AMD_IOMMU_CTRL_CMDBUF |
+              AMD_IOMMU_CTRL_EVT_LOG | AMD_IOMMU_CTRL_EVT_INT |
+              AMD_IOMMU_CTRL_GA_LOG | AMD_IOMMU_CTRL_GA_INT |
+              AMD_IOMMU_CTRL_PPR_LOG | AMD_IOMMU_CTRL_PPR_INT |
+              AMD_IOMMU_CTRL_PPR);
+    writeq(base + AMD_IOMMU_CTRL_REG, ctrl);
+
     ctrl &= ~AMD_IOMMU_CTRL_EN;
     writeq(base + AMD_IOMMU_CTRL_REG, ctrl);
 

@@ -67,10 +67,11 @@ static EFI_STATUS FindGop(struct csmwrap_priv *priv)
             continue;
         }
 
-        // Initialize GOP if not started
-        UINTN currentMode = Gop->Mode == NULL ? 0 : Gop->Mode->Mode;
+        // Initialize GOP if not started (Limine pattern: QueryMode may return
+        // EFI_NOT_STARTED, kick it with SetMode(0) and re-query).
         EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *modeInfo;
         UINTN modeInfoSize;
+        UINTN currentMode = Gop->Mode == NULL ? 0 : Gop->Mode->Mode;
 
         Status = Gop->QueryMode(Gop, currentMode, &modeInfoSize, &modeInfo);
         if (Status == EFI_NOT_STARTED) {
@@ -78,6 +79,11 @@ static EFI_STATUS FindGop(struct csmwrap_priv *priv)
             if (EFI_ERROR(Status)) {
                 continue;
             }
+            currentMode = Gop->Mode == NULL ? 0 : Gop->Mode->Mode;
+            Status = Gop->QueryMode(Gop, currentMode, &modeInfoSize, &modeInfo);
+        }
+        if (EFI_ERROR(Status)) {
+            continue;
         }
 
         // Try all modes to find one with valid FrameBufferBase

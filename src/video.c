@@ -285,13 +285,15 @@ static EFI_STATUS csmwrap_pci_vgaarb(EFI_PCI_IO_PROTOCOL *PciIo)
         return Status;
     }
 
-    Attributes = Supported & (EFI_PCI_IO_ATTRIBUTE_VGA_IO | EFI_PCI_IO_ATTRIBUTE_VGA_IO_16);
-
-    if (Attributes == 0) {
+    /* Prefer aliased VGA I/O for legacy OS compatibility (ISA-style decoding);
+     * fall back to strict 16-bit if that's all the bridge supports. */
+    if (Supported & EFI_PCI_IO_ATTRIBUTE_VGA_IO) {
+        Attributes = EFI_PCI_IO_ATTRIBUTE_VGA_IO;
+    } else if (Supported & EFI_PCI_IO_ATTRIBUTE_VGA_IO_16) {
+        Attributes = EFI_PCI_IO_ATTRIBUTE_VGA_IO_16;
+    } else {
         printf("%s: No VGA IO attributes support\n", __func__);
         unsupported = TRUE;
-    } else if (Attributes == (EFI_PCI_IO_ATTRIBUTE_VGA_IO | EFI_PCI_IO_ATTRIBUTE_VGA_IO_16)) {
-        Attributes = EFI_PCI_IO_ATTRIBUTE_VGA_IO; // We want to use regular VGA IO
     }
 
     if (Supported & EFI_PCI_IO_ATTRIBUTE_VGA_MEMORY) {

@@ -216,10 +216,11 @@ void oprom_dispatch_all(struct csmwrap_priv *priv, struct pci_oprom_list *list)
         return;
 
     /*
-     * ROM placement watermark. VGA ROM (if present) occupies
-     * VGABIOS_START..VGABIOS_START+vbios_size. Non-VGA ROMs go after it.
+     * ROM placement watermark. With a VBIOS, non-VGA ROMs start just past it.
+     * With no VBIOS (e.g. headless system), skip the canonical VGA region so
+     * non-VGA ROMs never land at 0xC0000 where firmware expects a VGA OpROM.
      */
-    uintptr_t rom_watermark = VGABIOS_START;
+    uintptr_t rom_watermark = VGABIOS_END;
     if (vbios_loc != NULL)
         rom_watermark = ALIGN_UP(VGABIOS_START + vbios_size, OPTION_ROM_ALIGN);
 

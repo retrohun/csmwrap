@@ -770,8 +770,8 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
     if (!priv->gop) {
         status = FindGop(priv);
         if (EFI_ERROR(status)) {
-            printf("Unable to get GOP service\n");
-            return -1;
+            printf("Unable to get GOP service; continuing without video\n");
+            return EFI_UNSUPPORTED;
         }
     }
 

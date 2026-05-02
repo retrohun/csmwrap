@@ -463,12 +463,11 @@ static struct acpi_rsdt *create_patched_rsdt(struct acpi_rsdp *rsdp, uintptr_t n
     struct acpi_rsdt *new_rsdt = (struct acpi_rsdt *)(uintptr_t)new_rsdt_addr;
     memcpy(new_rsdt, orig_rsdt, len);
 
-    /* Find and update MADT entry */
+    /* Find and update all MADT entries (some firmware lists it more than once) */
     for (size_t i = 0; i < num_entries; i++) {
         struct acpi_sdt_hdr *hdr = (struct acpi_sdt_hdr *)(uintptr_t)new_rsdt->entries[i];
         if (hdr && memcmp(hdr->signature, ACPI_MADT_SIGNATURE, 4) == 0) {
             new_rsdt->entries[i] = (uint32_t)new_madt_addr;
-            break;
         }
     }
 
@@ -506,12 +505,11 @@ static struct acpi_xsdt *create_patched_xsdt(struct acpi_rsdp *rsdp, uintptr_t n
     struct acpi_xsdt *new_xsdt = (struct acpi_xsdt *)(uintptr_t)new_xsdt_addr;
     memcpy(new_xsdt, orig_xsdt, len);
 
-    /* Find and update MADT entry */
+    /* Find and update all MADT entries (some firmware lists it more than once) */
     for (size_t i = 0; i < num_entries; i++) {
         struct acpi_sdt_hdr *hdr = (struct acpi_sdt_hdr *)(uintptr_t)new_xsdt->entries[i];
         if (hdr && memcmp(hdr->signature, ACPI_MADT_SIGNATURE, 4) == 0) {
             new_xsdt->entries[i] = (uint64_t)new_madt_addr;
-            break;
         }
     }
 

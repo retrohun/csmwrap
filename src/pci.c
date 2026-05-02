@@ -249,9 +249,9 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
         uint16_t cmd = pci_read16(address, 0x04);
         pci_write16(address, 0x04, cmd & ~0x06);  // Clear memory space + bus master
 
-        // Write new size to control register (size in bits [12:8])
-        // Preserve BAR index in bits [2:0]
-        uint32_t new_ctrl = (ctrl & 0x7) | ((best_size_bit & 0x1F) << 8);
+        // Read-modify-write only the BAR Size field (bits [12:8]); other
+        // bits include RsvdP that must be preserved per PCIe spec.
+        uint32_t new_ctrl = (ctrl & ~0x1F00) | ((best_size_bit & 0x1F) << 8);
         pci_write32(address, entry_offset + 4, new_ctrl);
 
         // Restore BAR address clobbered by resize

@@ -145,6 +145,13 @@ static void load_nmi_madt_info(void)
             g_nmi_madt_flags = nmi->flags;
             break;
         }
+        if (hdr->type == ACPI_MADT_ENTRY_TYPE_LOCAL_X2APIC_NMI) {
+            struct acpi_madt_x2apic_nmi *nmi =
+                (struct acpi_madt_x2apic_nmi *)entry;
+            g_nmi_lint = nmi->lint & 1;
+            g_nmi_madt_flags = nmi->flags;
+            break;
+        }
         entry += hdr->length;
     }
     uacpi_table_unref(&madt_table);

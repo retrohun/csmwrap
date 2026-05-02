@@ -165,10 +165,12 @@ ap_trampoline_start:
     ; Must clear both EN (bit 11) and EXTD (bit 10) simultaneously
     ; to correctly transition from x2APIC mode to disabled state.
     ;
-    ; If x2APIC is active (EXTD set), skip the disable — it may be locked
-    ; (e.g. Nova Lake xAPIC deprecation) and WRMSR would #GP. A legacy OS
-    ; cannot send x2APIC-mode IPIs via MMIO, so leaving the APIC enabled
-    ; in x2APIC mode is safe for the helper core.
+    ; If the AP came up already in x2APIC mode (EXTD set), the BSP-side
+    ; apic_prepare_for_legacy() must have left x2APIC alone, meaning the
+    ; mode is locked (e.g. Nova Lake xAPIC deprecation) or the silicon has
+    ; no xAPIC support at all. In either case clearing EXTD here would #GP,
+    ; so we leave the APIC enabled. A legacy OS cannot send x2APIC-mode
+    ; IPIs via MMIO anyway, so the helper stays unreachable to it.
     mov ecx, MSR_IA32_APIC_BASE
     rdmsr
     test eax, APIC_BASE_EXTD

@@ -16,6 +16,10 @@
 #include <io.h>
 #include <printf.h>
 
+#include <uacpi/acpi.h>
+#include <uacpi/tables.h>
+#include <uacpi/uacpi.h>
+
 /* MSR addresses */
 #define MSR_IA32_APIC_BASE              0x1B
 #define MSR_IA32_ARCH_CAPABILITIES      0x10A
@@ -116,13 +120,60 @@ static bool lvt_should_mask(uint32_t lvt)
     }
 }
 
+/* MADT NMI routing (loaded once by apic_prepare_for_legacy). */
+static uint8_t  g_nmi_lint = 1;       /* default: NMI on LINT1 */
+static uint16_t g_nmi_madt_flags = 0; /* MADT polarity/trigger flags */
+
+static void load_nmi_madt_info(void)
+{
+    struct uacpi_table madt_table;
+    if (uacpi_table_find_by_signature(ACPI_MADT_SIGNATURE, &madt_table)
+            != UACPI_STATUS_OK) {
+        return;
+    }
+    struct acpi_madt *madt = (struct acpi_madt *)madt_table.virt_addr;
+    uint8_t *entry = (uint8_t *)(madt + 1);
+    uint8_t *end = (uint8_t *)madt + madt->hdr.length;
+
+    while (entry < end) {
+        struct acpi_entry_hdr *hdr = (struct acpi_entry_hdr *)entry;
+        if (hdr->length < 2) break;
+        if (hdr->type == ACPI_MADT_ENTRY_TYPE_LAPIC_NMI) {
+            struct acpi_madt_lapic_nmi *nmi =
+                (struct acpi_madt_lapic_nmi *)entry;
+            g_nmi_lint = nmi->lint & 1;
+            g_nmi_madt_flags = nmi->flags;
+            break;
+        }
+        entry += hdr->length;
+    }
+    uacpi_table_unref(&madt_table);
+}
+
+/* Build the LVT value (delivery mode + polarity/trigger) for one LINT pin.
+ * The pin matching MADT's NMI routing gets NMI delivery with MADT-supplied
+ * polarity/trigger; the other gets ExtINT (edge, active high). */
+static uint32_t lint_lvt_value(int pin)
+{
+    if (pin == g_nmi_lint) {
+        uint32_t val = LVT_DELIVERY_NMI;
+        if ((g_nmi_madt_flags & ACPI_MADT_POLARITY_MASK)
+                == ACPI_MADT_POLARITY_ACTIVE_LOW)
+            val |= LVT_POLARITY_ACTIVE_LOW;
+        if ((g_nmi_madt_flags & ACPI_MADT_TRIGGERING_MASK)
+                == ACPI_MADT_TRIGGERING_LEVEL)
+            val |= LVT_TRIGGER_LEVEL;
+        return val;
+    }
+    return LVT_DELIVERY_EXTINT;
+}
+
 /*
  * Configure LAPIC for legacy BIOS operation in x2APIC mode (MSR access).
- * Sets up LINT0 for ExtINT, LINT1 for NMI per Intel SDM Appendix D.
+ * Sets up LINT0/LINT1 per MADT-reported NMI routing (default: LINT1=NMI).
  *
  * Note: The LAPIC ignores trigger mode for ExtINT and NMI delivery modes,
- * always using edge-triggered internally. We set edge-triggered explicitly
- * to match Intel's documented example (0x0700 for ExtINT, 0x0400 for NMI).
+ * always using edge-triggered internally.
  */
 static void x2apic_configure_for_legacy(void)
 {
@@ -159,31 +210,20 @@ static void x2apic_configure_for_legacy(void)
             wrmsr(X2APIC_MSR_LVT_CMCI, lvt | LVT_MASK);
     }
 
-    /* Configure LINT0 for ExtINT (Intel SDM example: 0x00000700):
-     * - Delivery mode = ExtINT (7)
-     * - Edge triggered (LAPIC ignores this for ExtINT, but match Intel docs)
-     * - Active high
-     * - Unmasked
-     */
+    /* Configure LINT0 / LINT1: one gets NMI (per MADT), the other ExtINT. */
     val = rdmsr(X2APIC_MSR_LVT_LINT0);
     printf("  x2APIC LINT0 before: 0x%08lx\n", (uint32_t)val);
     val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
-    val |= LVT_DELIVERY_EXTINT;
+    val |= lint_lvt_value(0);
     wrmsr(X2APIC_MSR_LVT_LINT0, val);
     printf("  x2APIC LINT0 after:  0x%08lx\n", (uint32_t)rdmsr(X2APIC_MSR_LVT_LINT0));
 
-    /* Configure LINT1 for NMI (Intel SDM example: 0x00000400):
-     * - Delivery mode = NMI (4)
-     * - Edge triggered (LAPIC ignores this for NMI, but match Intel docs)
-     * - Active high
-     * - Unmasked
-     */
     val = rdmsr(X2APIC_MSR_LVT_LINT1);
     printf("  x2APIC LINT1 before: 0x%08lx\n", (uint32_t)val);
     val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
-    val |= LVT_DELIVERY_NMI;
+    val |= lint_lvt_value(1);
     wrmsr(X2APIC_MSR_LVT_LINT1, val);
     printf("  x2APIC LINT1 after:  0x%08lx\n", (uint32_t)rdmsr(X2APIC_MSR_LVT_LINT1));
 
@@ -245,21 +285,20 @@ static void xapic_configure_for_legacy(uintptr_t apic_base)
             *(volatile uint32_t *)(apic_base + XAPIC_LVT_CMCI_OFFSET) = lvt | LVT_MASK;
     }
 
-    /* Configure LINT0 for ExtINT (Intel SDM example: 0x00000700) */
+    /* Configure LINT0 / LINT1: one gets NMI (per MADT), the other ExtINT. */
     val = *lint0_reg;
     printf("  xAPIC LINT0 before: 0x%08x\n", val);
     val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
-    val |= LVT_DELIVERY_EXTINT;
+    val |= lint_lvt_value(0);
     *lint0_reg = val;
     printf("  xAPIC LINT0 after:  0x%08x\n", *lint0_reg);
 
-    /* Configure LINT1 for NMI (Intel SDM example: 0x00000400) */
     val = *lint1_reg;
     printf("  xAPIC LINT1 before: 0x%08x\n", val);
     val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
-    val |= LVT_DELIVERY_NMI;
+    val |= lint_lvt_value(1);
     *lint1_reg = val;
     printf("  xAPIC LINT1 after:  0x%08x\n", *lint1_reg);
 
@@ -296,6 +335,9 @@ void apic_prepare_for_legacy(void)
     bool lapic_enabled, x2apic_enabled;
 
     printf("Configuring APIC for legacy BIOS compatibility...\n");
+
+    load_nmi_madt_info();
+    printf("  NMI on LINT%u (MADT flags 0x%04x)\n", g_nmi_lint, g_nmi_madt_flags);
 
     /* Read current APIC state */
     apic_base_msr = rdmsr(MSR_IA32_APIC_BASE);

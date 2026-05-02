@@ -24,6 +24,9 @@
 #define MPTABLE_SIGNATURE   0x5f504d5f  /* "_MP_" */
 #define MPCONFIG_SIGNATURE  0x504d4350  /* "PCMP" */
 
+/* IA32_APIC_BASE physical-address bits [51:12]. */
+#define APIC_BASE_ADDR_MASK 0xFFFFFFFFFFFFF000ULL
+
 /* MP Table Entry Types */
 #define MPT_TYPE_CPU        0
 #define MPT_TYPE_BUS        1
@@ -191,8 +194,8 @@ static uint32_t get_bsp_apic_id(void)
     uint64_t apic_base = rdmsr(0x1b);
     if (apic_base & (1 << 10))
         return (uint32_t)rdmsr(0x802);  /* x2APIC: IA32_X2APIC_APICID */
-    uint32_t lapic_addr = apic_base & 0xFFFFF000;
-    volatile uint32_t *id_reg = (volatile uint32_t *)(uintptr_t)(lapic_addr + 0x20);
+    uintptr_t lapic_addr = (uintptr_t)(apic_base & APIC_BASE_ADDR_MASK);
+    volatile uint32_t *id_reg = (volatile uint32_t *)(lapic_addr + 0x20);
     return (*id_reg) >> 24;
 }
 
@@ -211,8 +214,8 @@ static uint8_t get_lapic_version(void)
     uint64_t apic_base = rdmsr(0x1b);
     if (apic_base & (1 << 10))  /* x2APIC mode: use MSR 0x803 */
         return rdmsr(0x803) & 0xFF;
-    uint32_t lapic_addr = apic_base & 0xFFFFF000;
-    volatile uint32_t *ver_reg = (volatile uint32_t *)(uintptr_t)(lapic_addr + 0x30);
+    uintptr_t lapic_addr = (uintptr_t)(apic_base & APIC_BASE_ADDR_MASK);
+    volatile uint32_t *ver_reg = (volatile uint32_t *)(lapic_addr + 0x30);
     return (*ver_reg) & 0xFF;
 }
 
@@ -611,6 +614,14 @@ bool mptable_init(struct csmwrap_priv *priv)
         return false;
     }
 
+    /* config->lapic is a 32-bit field. */
+    uint64_t lapic_phys_base = rdmsr(0x1b) & APIC_BASE_ADDR_MASK;
+    if (lapic_phys_base > 0xFFFFFFFF) {
+        printf("mptable: LAPIC base 0x%llx exceeds 32-bit MP table field, skipping MP table\n",
+               (unsigned long long)lapic_phys_base);
+        return false;
+    }
+
     if (!parse_madt(&madt, helper_apic_id)) {
         printf("mptable: failed to parse MADT, skipping MP table\n");
         return false;
@@ -675,7 +686,7 @@ bool mptable_init(struct csmwrap_priv *priv)
     config->spec = 4;  /* MP spec 1.4 */
     memcpy(config->oemid, "CSMWRAP ", 8);
     memcpy(config->productid, "MP TABLE    ", 12);
-    config->lapic = rdmsr(0x1b) & 0xFFFFF000;
+    config->lapic = (uint32_t)lapic_phys_base;
 
     /* CPU entries */
     for (size_t i = 0; i < madt.cpu_count; i++) {

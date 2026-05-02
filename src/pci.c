@@ -787,9 +787,9 @@ no_prefetch_range:
         if (bar != max_bars - 1 && is_64bit) {
             uint32_t next_bar = pci_read32(&address, bar_offset + 0x4);
             pci_write32(&address, bar_offset + 0x4, 0xFFFFFFFF);
-            uint32_t response = pci_read32(&address, bar_offset + 0x4);
+            uint32_t response_hi = pci_read32(&address, bar_offset + 0x4);
             pci_write32(&address, bar_offset + 0x4, next_bar);
-            length |= (uint64_t)response << 32;
+            length |= (uint64_t)response_hi << 32;
         } else {
             length |= 0xffffffff00000000;
         }

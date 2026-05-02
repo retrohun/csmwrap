@@ -20,7 +20,8 @@ static EFI_GUID gEfiLegacyRegion2ProtocolGuid = EFI_LEGACY_REGION2_PROTOCOL_GUID
 #define PAM0_REGISTER  0x90    /* Q35 chipset */
 #define PAM_LOCK_BIT   0x01    /* Bit indicating PAM registers are locked */
 #define PAM_LOCK_REG   0x80    /* Register containing PAM lock bit on newer Intel chipsets */
-#define PAM_ENABLE     0x33    /* Enable read+write for both halves of PAM1-PAM6 */
+#define PAM_ENABLE     0x33    /* bits[1:0]=11 (LOENABLE R+W), bits[5:4]=11 (HIENABLE R+W) */
+#define PAM0_ENABLE    0x30    /* PAM0 only has HIENABLE; bits[3:0] are reserved/lock */
 
 
 /*
@@ -140,14 +141,14 @@ int unlock_piix4_pam(void)
 {
     printf("Unlocking BIOS region with PIIX4 PAM\n");
 
-    /* Enable read+write for PAM0-PAM6 (0x59-0x96) */
-    pciConfigWriteByte(0, 0, 0, 0x59, PAM_ENABLE);  /* PAM0 (0xF0000-0xFFFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5a, PAM_ENABLE);  /* PAM1 (0xC0000-0xC3FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5b, PAM_ENABLE);  /* PAM2 (0xC4000-0xC7FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5c, PAM_ENABLE);  /* PAM3 (0xC8000-0xCBFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5d, PAM_ENABLE);  /* PAM4 (0xCC000-0xCFFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5e, PAM_ENABLE);  /* PAM5 (0xD0000-0xD3FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x5f, PAM_ENABLE);  /* PAM6 (0xD4000-0xD7FFF) */
+    /* Enable read+write for PAM0-PAM6 (0x59-0x5F) */
+    pciConfigWriteByte(0, 0, 0, 0x59, PAM0_ENABLE); /* PAM0: 0xF0000-0xFFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x5a, PAM_ENABLE);  /* PAM1: 0xC0000-0xC7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x5b, PAM_ENABLE);  /* PAM2: 0xC8000-0xCFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x5c, PAM_ENABLE);  /* PAM3: 0xD0000-0xD7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x5d, PAM_ENABLE);  /* PAM4: 0xD8000-0xDFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x5e, PAM_ENABLE);  /* PAM5: 0xE0000-0xE7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x5f, PAM_ENABLE);  /* PAM6: 0xE8000-0xEFFFF */
 
     return 0;
 }
@@ -162,13 +163,13 @@ int unlock_q35_pam(void)
     printf("Unlocking BIOS region with Q35 PAM\n");
 
     /* Enable read+write for PAM0-PAM6 (0x90-0x96) */
-    pciConfigWriteByte(0, 0, 0, 0x90, PAM_ENABLE);  /* PAM0 (0xF0000-0xFFFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x91, PAM_ENABLE);  /* PAM1 (0xC0000-0xC3FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x92, PAM_ENABLE);  /* PAM2 (0xC4000-0xC7FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x93, PAM_ENABLE);  /* PAM3 (0xC8000-0xCBFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x94, PAM_ENABLE);  /* PAM4 (0xCC000-0xCFFFF) */
-    pciConfigWriteByte(0, 0, 0, 0x95, PAM_ENABLE);  /* PAM5 (0xD0000-0xD3FFF) */
-    pciConfigWriteByte(0, 0, 0, 0x96, PAM_ENABLE);  /* PAM6 (0xD4000-0xD7FFF) */
+    pciConfigWriteByte(0, 0, 0, 0x90, PAM0_ENABLE); /* PAM0: 0xF0000-0xFFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x91, PAM_ENABLE);  /* PAM1: 0xC0000-0xC7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x92, PAM_ENABLE);  /* PAM2: 0xC8000-0xCFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x93, PAM_ENABLE);  /* PAM3: 0xD0000-0xD7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x94, PAM_ENABLE);  /* PAM4: 0xD8000-0xDFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x95, PAM_ENABLE);  /* PAM5: 0xE0000-0xE7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x96, PAM_ENABLE);  /* PAM6: 0xE8000-0xEFFFF */
 
     return 0;
 }
@@ -189,13 +190,13 @@ int unlock_skylake_pam(void)
     }
 
     /* Enable read+write for PAM0-PAM6 (0x80-0x86) */
-    pciConfigWriteByte(0, 0, 0, 0x80, 0x30);        /* PAM0: bits[5:4]=11 enables read+write; bits[1:0] kept 0 to avoid setting PAM lock */
-    pciConfigWriteByte(0, 0, 0, 0x81, PAM_ENABLE);  /* PAM1 */
-    pciConfigWriteByte(0, 0, 0, 0x82, PAM_ENABLE);  /* PAM2 */
-    pciConfigWriteByte(0, 0, 0, 0x83, PAM_ENABLE);  /* PAM3 */
-    pciConfigWriteByte(0, 0, 0, 0x84, PAM_ENABLE);  /* PAM4 */
-    pciConfigWriteByte(0, 0, 0, 0x85, PAM_ENABLE);  /* PAM5 */
-    pciConfigWriteByte(0, 0, 0, 0x86, PAM_ENABLE);  /* PAM6 */
+    pciConfigWriteByte(0, 0, 0, 0x80, PAM0_ENABLE); /* PAM0: 0xF0000-0xFFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x81, PAM_ENABLE);  /* PAM1: 0xC0000-0xC7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x82, PAM_ENABLE);  /* PAM2: 0xC8000-0xCFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x83, PAM_ENABLE);  /* PAM3: 0xD0000-0xD7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x84, PAM_ENABLE);  /* PAM4: 0xD8000-0xDFFFF */
+    pciConfigWriteByte(0, 0, 0, 0x85, PAM_ENABLE);  /* PAM5: 0xE0000-0xE7FFF */
+    pciConfigWriteByte(0, 0, 0, 0x86, PAM_ENABLE);  /* PAM6: 0xE8000-0xEFFFF */
 
     return 0;
 }

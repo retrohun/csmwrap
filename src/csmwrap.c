@@ -666,30 +666,39 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     /* WARNING: No EFI runtime service afterwards */
     UINTN efi_mmap_size = 0, efi_desc_size = 0, efi_mmap_key = 0;
     UINT32 efi_desc_ver = 0;
-    EFI_MEMORY_DESCRIPTOR *efi_mmap;
-    EFI_MEMORY_DESCRIPTOR tmp_mmap[1];
-    efi_mmap_size = sizeof(tmp_mmap);
-    gBS->GetMemoryMap(&efi_mmap_size, tmp_mmap, &efi_mmap_key, &efi_desc_size, &efi_desc_ver);
-    efi_mmap_size += 4096;
-    Status = gBS->AllocatePool(EfiLoaderData, efi_mmap_size, (void **)&efi_mmap);
-    if (Status != EFI_SUCCESS) {
-        panic("AllocatePool() for EFI memory map failed\n");
-    }
-    size_t retries = 0;
+    EFI_MEMORY_DESCRIPTOR *efi_mmap = NULL;
+    UINTN efi_mmap_alloc = 0;
 
-retry:
-    Status = gBS->GetMemoryMap(&efi_mmap_size, efi_mmap, &efi_mmap_key, &efi_desc_size, &efi_desc_ver);
-    if (retries == 0 && Status != EFI_SUCCESS) {
-        panic("GetMemoryMap() failed\n");
-    }
-
-    Status = gBS->ExitBootServices(ImageHandle, efi_mmap_key);
-    if (Status != EFI_SUCCESS) {
+    for (size_t retries = 0; ; retries++) {
         if (retries == 128) {
             panic("Failed to exit boot services\n");
         }
-        retries++;
-        goto retry;
+
+        efi_mmap_size = efi_mmap_alloc;
+        Status = gBS->GetMemoryMap(&efi_mmap_size, efi_mmap, &efi_mmap_key,
+                                   &efi_desc_size, &efi_desc_ver);
+        if (Status == EFI_BUFFER_TOO_SMALL) {
+            /* Map grew (or first call) - reallocate with slack for the
+             * descriptors that AllocatePool itself may add. */
+            if (efi_mmap != NULL) {
+                gBS->FreePool(efi_mmap);
+            }
+            efi_mmap_alloc = efi_mmap_size + 4096;
+            if (gBS->AllocatePool(EfiLoaderData, efi_mmap_alloc,
+                                  (void **)&efi_mmap) != EFI_SUCCESS) {
+                panic("AllocatePool() for EFI memory map failed\n");
+            }
+            continue;
+        }
+        if (Status != EFI_SUCCESS) {
+            panic("GetMemoryMap() failed\n");
+        }
+
+        Status = gBS->ExitBootServices(ImageHandle, efi_mmap_key);
+        if (Status == EFI_SUCCESS) {
+            break;
+        }
+        /* Key invalidated by a memory-map change - retry. */
     }
 
     /* Boot services protocols (including serial I/O) are no longer usable */

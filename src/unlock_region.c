@@ -175,13 +175,15 @@ int unlock_q35_pam(void)
 }
 
 /**
- * Unlock BIOS region using direct PCI configuration space access for Intel Skylake+ chipsets
+ * Unlock BIOS region using direct PCI configuration space access for Intel
+ * Sandy Bridge and later host bridges (PAM at D0:F0 offsets 0x80-0x86,
+ * with PAM-LCK at PAM0 bit 0).
  *
  * @return 0 on success, -1 on failure
  */
-int unlock_skylake_pam(void)
+int unlock_sandybridge_pam(void)
 {
-    printf("Unlocking BIOS region with Intel Skylake+ Generic PAM\n");
+    printf("Unlocking BIOS region with Intel Sandy Bridge+ PAM\n");
 
     /* Check if PAM is locked */
     if (pciConfigReadByte(0, 0, 0, PAM_LOCK_REG) & PAM_LOCK_BIT) {
@@ -401,7 +403,7 @@ int unlock_bios_region(void)
                     status = unlock_q35_pam();
                     break;
                 default:
-                    status = unlock_skylake_pam();
+                    status = unlock_sandybridge_pam();
                     break;
             }
             break;

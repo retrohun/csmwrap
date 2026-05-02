@@ -80,9 +80,11 @@ ap_trampoline_start:
 
     ; AMD APM Vol 2 §7.6.3: disable cache and flush around MTRR change.
     ; Paging is off in real mode so no TLB / PGE handling is required.
+    ; (CD=1, NW=1) is unsupported per Intel SDM Vol 3A §11.5.3.
     mov eax, cr0
     mov edi, eax                        ; save CR0
     or eax, 0x40000000                  ; CR0.CD = 1
+    and eax, ~0x20000000                ; CR0.NW = 0
     mov cr0, eax
     wbinvd
 

@@ -218,19 +218,20 @@ static void start_ap_xapic(uint32_t apic_id)
     uintptr_t lapic_base = get_lapic_base();
     volatile uint32_t *icr_high = (volatile uint32_t *)(lapic_base + LAPIC_ICR_HIGH);
     volatile uint32_t *icr_low = (volatile uint32_t *)(lapic_base + LAPIC_ICR_LOW);
+    uint32_t dest = (apic_id & 0xFF) << 24;  /* xAPIC physical destination is 8-bit */
 
     wait_icr_idle_xapic(lapic_base);
-    *icr_high = apic_id << 24;
+    *icr_high = dest;
     *icr_low = 0x4500;  /* INIT */
     delay_us(10000);
     wait_icr_idle_xapic(lapic_base);
 
-    *icr_high = apic_id << 24;
+    *icr_high = dest;
     *icr_low = 0x4600 | AP_TRAMPOLINE_VECTOR;  /* SIPI */
     delay_us(200);
     wait_icr_idle_xapic(lapic_base);
 
-    *icr_high = apic_id << 24;
+    *icr_high = dest;
     *icr_low = 0x4600 | AP_TRAMPOLINE_VECTOR;  /* SIPI (retry) */
     wait_icr_idle_xapic(lapic_base);
 }

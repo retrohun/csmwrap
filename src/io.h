@@ -231,7 +231,7 @@ static inline void pciSetAddress(unsigned int bus, unsigned int slot,
     address = 0x80000000 | ((unsigned long) (bus & 0xff) << 16)
               | ((unsigned long) (slot & 0x1f) << 11)
               | ((unsigned long) (function & 0x7) << 8)
-              | ((unsigned long) offset & 0xff);
+              | ((unsigned long) offset & 0xfc);
     /* Full DWORD write to port must be used for PCI to detect new address. */
     outl(PCI_CONFIG_ADDRESS, address);
 }

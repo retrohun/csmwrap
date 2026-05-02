@@ -78,6 +78,14 @@ ap_trampoline_start:
     cmp ebx, 0x68747541      ; "Auth" (AuthenticAMD)
     jne .unlock_failed        ; Not AMD and not writable - halt
 
+    ; AMD APM Vol 2 §7.6.3: disable cache and flush around MTRR change.
+    ; Paging is off in real mode so no TLB / PGE handling is required.
+    mov eax, cr0
+    mov edi, eax                        ; save CR0
+    or eax, 0x40000000                  ; CR0.CD = 1
+    mov cr0, eax
+    wbinvd
+
     ; AMD system with locked region - attempt MTRR unlock
     ; Enable MTRR modification: set SYS_CFG.MtrrFixDramModEn (bit 19)
     mov ecx, MSR_SYS_CFG
@@ -125,6 +133,9 @@ ap_trampoline_start:
     and eax, ~SYS_CFG_MTRR_FIX_DRAM_MOD_EN
     or eax, SYS_CFG_MTRR_FIX_DRAM_EN
     wrmsr
+
+    wbinvd
+    mov cr0, edi                        ; restore CR0
 
     ; Verify the unlock worked by testing write again
     ; FS still points to 0xF000 from earlier

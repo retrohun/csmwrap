@@ -208,9 +208,21 @@ int unlock_skylake_pam(void)
 int unlock_amd_mtrr(void)
 {
     uint64_t val;
+    unsigned long flags, cr0, cr4;
     printf("Unlocking BIOS region with AMD MTRR\n");
 
-    /* TODO: Investigate SMP impact */
+    /* AMD APM Vol 2 §7.6.3: disable cache, flush, modify MTRRs, flush, restore.
+     * Required so stale cache lines and TLB entries don't outlive the change. */
+    asm volatile ("pushf; pop %0; cli" : "=rm"(flags) :: "memory");
+    asm volatile ("mov %%cr0, %0" : "=r"(cr0));
+    asm volatile ("mov %0, %%cr0" :: "r"(cr0 | (1UL << 30)));  /* CD = 1 */
+    asm volatile ("wbinvd");
+    asm volatile ("mov %%cr4, %0" : "=r"(cr4));
+    if (cr4 & (1UL << 7)) {  /* PGE */
+        asm volatile ("mov %0, %%cr4" :: "r"(cr4 & ~(1UL << 7)));
+    }
+
+    /* Enable MTRR modification: set SYS_CFG.MtrrFixDramModEn (bit 19) */
     val = rdmsr(MSR_SYS_CFG);
     val |= SYS_CFG_MTRR_FIX_DRAM_MOD_EN;
     wrmsr(MSR_SYS_CFG, val);
@@ -233,6 +245,11 @@ int unlock_amd_mtrr(void)
     val &= ~SYS_CFG_MTRR_FIX_DRAM_MOD_EN;
     val |= SYS_CFG_MTRR_FIX_DRAM_EN;
     wrmsr(MSR_SYS_CFG, val);
+
+    asm volatile ("wbinvd");
+    asm volatile ("mov %0, %%cr0" :: "r"(cr0));
+    asm volatile ("mov %0, %%cr4" :: "r"(cr4));
+    asm volatile ("push %0; popf" :: "rm"(flags) : "memory", "cc");
 
     return 0;
 }

@@ -194,8 +194,8 @@ static inline void cmos_write(uint8_t reg, uint8_t val)
  *
  * CMOS layout:
  *   0x15/0x16: Base memory in KB (should be 640)
- *   0x17/0x18: Extended memory between 1MB and 16MB, in KB (max 15360)
- *   0x30/0x31: Extended memory between 1MB and 64MB, in KB (max 65535)
+ *   0x17/0x18: Total extended memory in KB, saturated to 15360 (15MB)
+ *   0x30/0x31: Total extended memory in KB, saturated to 65535 (mirror of 0x17/0x18)
  *   0x34/0x35: Extended memory above 16MB, in 64KB blocks (max 65535)
  */
 static void

@@ -185,12 +185,15 @@ static uint8_t compute_checksum(void *data, size_t len)
     return sum;
 }
 
-/* Get BSP APIC ID */
+/* Read BSP APIC ID from the running CPU's LAPIC ID register. */
 static uint32_t get_bsp_apic_id(void)
 {
-    uint32_t eax, ebx, ecx, edx;
-    __asm__ volatile ("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(1));
-    return (ebx >> 24) & 0xFF;
+    uint64_t apic_base = rdmsr(0x1b);
+    if (apic_base & (1 << 10))
+        return (uint32_t)rdmsr(0x802);  /* x2APIC: IA32_X2APIC_APICID */
+    uint32_t lapic_addr = apic_base & 0xFFFFF000;
+    volatile uint32_t *id_reg = (volatile uint32_t *)(uintptr_t)(lapic_addr + 0x20);
+    return (*id_reg) >> 24;
 }
 
 /* Get CPU signature and features from CPUID */

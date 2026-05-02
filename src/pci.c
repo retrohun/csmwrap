@@ -787,8 +787,9 @@ no_prefetch_range:
         // Restore command register
         pci_write8(&address, 0x4, cmd);
 
-        // Skip unimplemented BARs (response was 0, which calculates to 4GB or 16EB)
-        if (response == 0 || length == 0) {
+        // Skip unimplemented BARs. For 64-bit BARs, lower-half response==0
+        // is legitimate when size >= 4GB (size bits live in the upper half).
+        if (length == 0 || (!is_64bit && response == 0)) {
             goto next_bar;
         }
 

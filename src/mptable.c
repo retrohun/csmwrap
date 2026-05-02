@@ -603,6 +603,14 @@ bool mptable_init(struct csmwrap_priv *priv)
 
     printf("mptable: building MP table (excluding helper core APIC ID %d)\n", helper_apic_id);
 
+    /* MP spec 1.4 fields are 8-bit; an unrepresentable BSP makes the whole
+     * table malformed (no BSP marker, misrouted local interrupts). */
+    uint32_t bsp_id = get_bsp_apic_id();
+    if (bsp_id > 255) {
+        printf("mptable: BSP APIC ID %u exceeds 8-bit limit, skipping MP table\n", bsp_id);
+        return false;
+    }
+
     if (!parse_madt(&madt, helper_apic_id)) {
         printf("mptable: failed to parse MADT, skipping MP table\n");
         return false;
@@ -823,7 +831,7 @@ prt_done:
 
     /* Local interrupt entries */
     /* ExtINT on the LINT pin opposite NMI, BSP only (8259 wired to BSP). */
-    uint8_t bsp_apic_id = (uint8_t)get_bsp_apic_id();
+    uint8_t bsp_apic_id = (uint8_t)bsp_id;  /* range-checked at function entry */
     uint8_t extint_lint = madt.nmi_lint ^ 1;
     struct mpt_intsrc *extint = (struct mpt_intsrc *)entry_ptr;
     extint->type = MPT_TYPE_LOCAL_INT;

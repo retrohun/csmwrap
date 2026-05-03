@@ -57,7 +57,10 @@ static inline void *ecam_address(struct ecam_region *region, struct pci_address 
 }
 
 static uint32_t pci_read_pio(struct pci_address *address, uint32_t offset, uint32_t size) {
-    if (offset >= 0x100) {
+    // CF8/CFC has no segment field and only ever reaches segment 0; refuse
+    // any other segment so we don't silently access a same-B:D.F device on
+    // segment 0 instead.
+    if (address->segment != 0 || offset >= 0x100) {
         return 0xFFFFFFFF;
     }
     switch (size) {
@@ -68,7 +71,7 @@ static uint32_t pci_read_pio(struct pci_address *address, uint32_t offset, uint3
 }
 
 static void pci_write_pio(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value) {
-    if (offset >= 0x100) {
+    if (address->segment != 0 || offset >= 0x100) {
         return;
     }
     switch (size) {
@@ -81,9 +84,7 @@ static void pci_write_pio(struct pci_address *address, uint32_t offset, uint32_t
 static uint32_t pci_read_ecam(struct pci_address *address, uint32_t offset, uint32_t size) {
     struct ecam_region *region = find_ecam_region(address->segment, address->bus);
     if (region == NULL) {
-        // Fall back to PIO if no ECAM region covers this bus
-        // Note: PIO can only access segment 0, so this will silently access
-        // the wrong device if address->segment != 0
+        // Fall back to PIO if no ECAM region covers this bus.
         return pci_read_pio(address, offset, size);
     }
     void *addr = ecam_address(region, address, offset);
@@ -97,9 +98,7 @@ static uint32_t pci_read_ecam(struct pci_address *address, uint32_t offset, uint
 static void pci_write_ecam(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value) {
     struct ecam_region *region = find_ecam_region(address->segment, address->bus);
     if (region == NULL) {
-        // Fall back to PIO if no ECAM region covers this bus
-        // Note: PIO can only access segment 0, so this will silently access
-        // the wrong device if address->segment != 0
+        // Fall back to PIO if no ECAM region covers this bus.
         pci_write_pio(address, offset, size, value);
         return;
     }

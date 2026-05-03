@@ -351,12 +351,11 @@ static struct pci_range *add_range(struct pci_bus *bus, uint64_t base, uint64_t 
     return &bus->ranges[bus->range_count - 1];
 }
 
+// Tombstone the range in place rather than shifting later entries down,
+// since bridge pseudo-BARs cache raw pointers into bus->ranges[].
 static bool drop_range(struct pci_bus *bus, struct pci_range *range) {
-    size_t i = ((uintptr_t)range - (uintptr_t)bus->ranges) / sizeof(struct pci_range);
-    if (i + 1 < bus->range_count) {
-        memmove(range, &bus->ranges[i + 1], (bus->range_count - i - 1) * sizeof(struct pci_range));
-    }
-    bus->range_count--;
+    (void)bus;
+    range->length = 0;
     return true;
 }
 
@@ -411,6 +410,9 @@ static bool drop_bar(struct pci_bus *bus, struct pci_bar *bar) {
 static bool is_address_in_prefetchable_range(struct pci_bus *bus, uint64_t address) {
     for (size_t i = 0; i < bus->range_count; i++) {
         struct pci_range *range = &bus->ranges[i];
+        if (range->length == 0) {
+            continue;
+        }
         if (address >= range->base && address < range->base + range->length) {
             return range->prefetchable;
         }
@@ -453,6 +455,10 @@ static void reallocate_single_bar(struct pci_bus *bus, struct pci_bar *bar) {
 again:
     for (size_t i = 0; i < bus->range_count; i++) {
         struct pci_range *range = &bus->ranges[i];
+
+        if (range->length == 0) {
+            continue;
+        }
 
         if (tried_all_prefetchable == false && bar->prefetchable != range->prefetchable) {
             continue;
@@ -989,6 +995,10 @@ static void pretty_print_bus(struct pci_bus *bus, int indent) {
     for (size_t i = 0; i < bus->range_count; i++) {
         struct pci_range *range = &bus->ranges[i];
 
+        if (range->length == 0) {
+            continue;
+        }
+
         printf("%-*srange %zu: base=0x%llx, length=0x%llx [%llx-%llx] (%sprefetchable)\n",
             (int)((indent + 1) * 2), "", i, range->base, range->length, range->base, range->base + range->length - 1,
             range->prefetchable ? "" : "non-");
@@ -1254,9 +1264,6 @@ again:
                 pci_write32(&address, 0x2c, 0);
             }
             drop_range(bridge_bus, range);
-            if (bridge_bus->range_count == 0) {
-                device->bridge_bus = NULL;
-            }
             drop_bar(bus, bar);
             goto again;
         }

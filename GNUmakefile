@@ -102,6 +102,7 @@ override CFLAGS += \
     -ffreestanding \
     -fno-stack-protector \
     -fno-stack-check \
+    -fno-delete-null-pointer-checks \
     -fshort-wchar \
     -fno-lto \
     -fPIE \

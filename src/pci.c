@@ -660,21 +660,15 @@ static bool scan_bars(struct pci_device *device) {
     address.function = device->function;
 
     if (device->type == PCI_DEVICE_BRIDGE) {
-        uint64_t non_prefetchable_base = pci_read16(&address, 0x20);
-        uint64_t non_prefetchable_length = pci_read16(&address, 0x22);
+        // Non-prefetchable memory window. Bits [3:0] of the 16-bit base and
+        // limit registers are reserved-zero, so we can use them as-is.
+        uint64_t non_prefetchable_base = (uint64_t)pci_read16(&address, 0x20) << 16;
+        uint64_t non_prefetchable_limit = ((uint64_t)pci_read16(&address, 0x22) << 16) | 0xfffff;
 
-        if (non_prefetchable_base != 0) {
-            non_prefetchable_base <<= 16;
-
-            non_prefetchable_length <<= 16;
-            non_prefetchable_length |= 0xfffff;
-
-            if (non_prefetchable_length < non_prefetchable_base) {
-                goto no_non_prefetch_range;
-            }
-
-            non_prefetchable_length -= non_prefetchable_base;
-            non_prefetchable_length++;
+        // A window is enabled iff limit >= base; otherwise it is closed
+        // (firmware convention is base = 0xFFF0, limit = 0x0000).
+        if (non_prefetchable_limit >= non_prefetchable_base) {
+            uint64_t non_prefetchable_length = non_prefetchable_limit - non_prefetchable_base + 1;
 
             struct pci_range *range = add_range(device->bridge_bus, non_prefetchable_base, non_prefetchable_length, false);
             if (range == NULL) {
@@ -702,36 +696,27 @@ static bool scan_bars(struct pci_device *device) {
                 goto no_non_prefetch_range;
             }
         }
-no_non_prefetch_range:
+no_non_prefetch_range:;
 
-        uint64_t prefetchable_base = pci_read16(&address, 0x24);
-        uint64_t prefetchable_length = pci_read16(&address, 0x26);
+        // Prefetchable memory window. Bits [3:0] of base/limit indicate
+        // 32-bit (0x0) vs 64-bit (0x1) decoding; mask them off before use.
+        uint16_t prefetchable_base_reg = pci_read16(&address, 0x24);
+        uint16_t prefetchable_limit_reg = pci_read16(&address, 0x26);
+        bool is_64 = (prefetchable_base_reg & 0xf) == 0x1;
 
-        if (prefetchable_base != 0) {
-            bool is_64 = (prefetchable_base & 0xf) == 0x1;
+        uint64_t prefetchable_base = (uint64_t)(prefetchable_base_reg & 0xfff0) << 16;
+        uint64_t prefetchable_limit = ((uint64_t)(prefetchable_limit_reg & 0xfff0) << 16) | 0xfffff;
 
-            prefetchable_base &= ~((uint64_t)0xf);
-            prefetchable_base <<= 16;
+        // For 64-bit windows, fold in the upper-32 registers before doing
+        // the limit-vs-base test: a window that crosses 4 GB legitimately
+        // has lower-16 limit < lower-16 base.
+        if (is_64) {
+            prefetchable_base |= (uint64_t)pci_read32(&address, 0x28) << 32;
+            prefetchable_limit |= (uint64_t)pci_read32(&address, 0x2c) << 32;
+        }
 
-            prefetchable_length &= ~((uint64_t)0xf);
-            prefetchable_length <<= 16;
-            prefetchable_length |= 0xfffff;
-
-            if (!is_64 && prefetchable_length < prefetchable_base) {
-                goto no_prefetch_range;
-            }
-
-            if (is_64) {
-                prefetchable_base |= (uint64_t)pci_read32(&address, 0x28) << 32;
-                prefetchable_length |= (uint64_t)pci_read32(&address, 0x2c) << 32;
-
-                if (prefetchable_length < prefetchable_base) {
-                    goto no_prefetch_range;
-                }
-            }
-
-            prefetchable_length -= prefetchable_base;
-            prefetchable_length++;
+        if (prefetchable_limit >= prefetchable_base) {
+            uint64_t prefetchable_length = prefetchable_limit - prefetchable_base + 1;
 
             struct pci_range *range = add_range(device->bridge_bus, prefetchable_base, prefetchable_length, true);
             if (range == NULL) {
@@ -759,7 +744,7 @@ no_non_prefetch_range:
                 goto no_prefetch_range;
             }
         }
-no_prefetch_range:
+no_prefetch_range:;
     }
 
     for (uint8_t bar = 0; bar < max_bars; ) {

@@ -510,11 +510,13 @@ again:
                bar->bar_number, bus->segment, bus->bus, bar->device->slot, bar->device->function,
                orig_base, bar->base);
 
-        // Track framebuffer through BAR relocation. Must only match once:
-        // a bridge has separate prefetchable and non-prefetchable windows that
-        // can alias after relocation, causing a double-adjustment to a wrong
-        // address (e.g. GPU MMIO instead of VRAM), corrupting GPU state.
+        // Track the framebuffer via the actual device BAR, not bridge window
+        // pseudo-BARs: a window's relocation only preserves the FB offset if
+        // the BAR layout within the window is unchanged, which compaction
+        // does not guarantee. The fb_relocated flag still guards against a
+        // post-adjustment FBA falling within another regular BAR's old range.
         if (!fb_relocated
+         && bar->bar_number != 0xff
          && priv.cb_fb.physical_address >= orig_base
          && priv.cb_fb.physical_address < orig_base + bar->length) {
             printf("BAR contains the EFI framebuffer. Modifying cb_fb.physical_address accordingly...\n");
@@ -581,7 +583,6 @@ again:
                 reallocate_bars(bar->device->bridge_bus);
             }
 
-            // bar_contains_framebuffer is always false for bridge windows (bar_number == 0xff)
             return;
         }
 

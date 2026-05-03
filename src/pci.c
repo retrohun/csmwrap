@@ -56,53 +56,73 @@ static inline void *ecam_address(struct ecam_region *region, struct pci_address 
     return (void *)(uintptr_t)addr;
 }
 
-static uint32_t pci_read_pio(struct pci_address *address, uint32_t offset) {
-    if (offset >= 0x100)
+static uint32_t pci_read_pio(struct pci_address *address, uint32_t offset, uint32_t size) {
+    if (offset >= 0x100) {
         return 0xFFFFFFFF;
-    return pciConfigReadDWord(address->bus, address->slot, address->function, offset);
+    }
+    switch (size) {
+        case 1: return pciConfigReadByte(address->bus, address->slot, address->function, offset);
+        case 2: return pciConfigReadWord(address->bus, address->slot, address->function, offset);
+        default: return pciConfigReadDWord(address->bus, address->slot, address->function, offset);
+    }
 }
 
-static void pci_write_pio(struct pci_address *address, uint32_t offset, uint32_t value) {
-    if (offset >= 0x100)
+static void pci_write_pio(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value) {
+    if (offset >= 0x100) {
         return;
-    pciConfigWriteDWord(address->bus, address->slot, address->function, offset, value);
+    }
+    switch (size) {
+        case 1: pciConfigWriteByte(address->bus, address->slot, address->function, offset, value); break;
+        case 2: pciConfigWriteWord(address->bus, address->slot, address->function, offset, value); break;
+        default: pciConfigWriteDWord(address->bus, address->slot, address->function, offset, value); break;
+    }
 }
 
-static uint32_t pci_read_ecam(struct pci_address *address, uint32_t offset) {
+static uint32_t pci_read_ecam(struct pci_address *address, uint32_t offset, uint32_t size) {
     struct ecam_region *region = find_ecam_region(address->segment, address->bus);
     if (region == NULL) {
         // Fall back to PIO if no ECAM region covers this bus
         // Note: PIO can only access segment 0, so this will silently access
         // the wrong device if address->segment != 0
-        return pci_read_pio(address, offset);
+        return pci_read_pio(address, offset, size);
     }
-    return readl(ecam_address(region, address, offset));
+    void *addr = ecam_address(region, address, offset);
+    switch (size) {
+        case 1: return readb(addr);
+        case 2: return readw(addr);
+        default: return readl(addr);
+    }
 }
 
-static void pci_write_ecam(struct pci_address *address, uint32_t offset, uint32_t value) {
+static void pci_write_ecam(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value) {
     struct ecam_region *region = find_ecam_region(address->segment, address->bus);
     if (region == NULL) {
         // Fall back to PIO if no ECAM region covers this bus
         // Note: PIO can only access segment 0, so this will silently access
         // the wrong device if address->segment != 0
-        pci_write_pio(address, offset, value);
+        pci_write_pio(address, offset, size, value);
         return;
     }
-    writel(ecam_address(region, address, offset), value);
+    void *addr = ecam_address(region, address, offset);
+    switch (size) {
+        case 1: writeb(addr, value); break;
+        case 2: writew(addr, value); break;
+        default: writel(addr, value); break;
+    }
 }
 
-typedef uint32_t(*pci_read_t)(struct pci_address *address, uint32_t offset);
-typedef void    (*pci_write_t)(struct pci_address *address, uint32_t offset, uint32_t value);
+typedef uint32_t(*pci_read_t)(struct pci_address *address, uint32_t offset, uint32_t size);
+typedef void    (*pci_write_t)(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value);
 
 static pci_read_t pci_read = pci_read_pio;
 static pci_write_t pci_write = pci_write_pio;
 
-uint32_t pci_read_config_space(struct pci_address *address, uint32_t offset) {
-    return pci_read(address, offset & PCI_OFFSET_MASK);
+uint32_t pci_read_config_space(struct pci_address *address, uint32_t offset, uint32_t size) {
+    return pci_read(address, offset & ~(size - 1), size);
 }
 
-void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32_t value) {
-    pci_write(address, offset & PCI_OFFSET_MASK, value);
+void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value) {
+    pci_write(address, offset & ~(size - 1), size, value);
 }
 
 // Parse MCFG table and populate ECAM regions

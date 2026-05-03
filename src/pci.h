@@ -90,61 +90,21 @@ struct pci_bus {
     uint64_t required_non_prefetchable_size;
 };
 
-#define PCI_OFFSET_MASK (~UINT32_C(3))
+#define pci_read8(address, offset)  ((uint8_t)pci_read_config_space((address), (offset), 1))
+#define pci_read16(address, offset) ((uint16_t)pci_read_config_space((address), (offset), 2))
+#define pci_read32(address, offset) pci_read_config_space((address), (offset), 4)
 
-#define pci_read8(address, offset) ({ \
-    /* Figure out which byte we want to read by AND-ing the offset with 0x3 (0b11) */ \
-    /* This gives us a value between 0 and 3 (inclusive) */ \
-    uint32_t byte_index = (offset) & 0x3; \
-    uint32_t dword = pci_read_config_space((address), (offset) & PCI_OFFSET_MASK); \
-    /* Shift the read dword right by `byte_index * 8` bits, that moves the byte */ \
-    /* we are interested in to the least significant position */ \
-    (uint8_t)((dword >> (byte_index * 8)) & 0xFF); \
-})
+#define pci_write8(address, offset, value)  pci_write_config_space((address), (offset), 1, (value))
+#define pci_write16(address, offset, value) pci_write_config_space((address), (offset), 2, (value))
+#define pci_write32(address, offset, value) pci_write_config_space((address), (offset), 4, (value))
 
-#define pci_read16(address, offset) ({ \
-    /* Figure out which word we want to read by AND-ing the offset with 0x2 (0b10) */ \
-    /* This gives us a value of 0 or 2 which we then use to select the right word */ \
-    uint32_t word_index = (offset) & 0x2; \
-    uint32_t dword = pci_read_config_space((address), (offset) & PCI_OFFSET_MASK); \
-    /* Shift the read dword right by `word_index * 8` bits, that moves the word */ \
-    /* we are interested in to the least significant position */ \
-    (uint16_t)((dword >> (word_index * 8)) & 0xFFFF); \
-})
+// Read `size` bytes (1, 2 or 4) from PCI config space. The access goes through
+// at the requested width so that dword-only RMW does not silently clobber
+// RW1C bits sharing the same dword (e.g. Status next to Command).
+uint32_t pci_read_config_space(struct pci_address *address, uint32_t offset, uint32_t size);
 
-// No bit magic required here as that case matches the granularity of pci_read_config_space
-#define pci_read32(address, offset) pci_read_config_space((address), (offset))
-
-#define pci_write8(address, offset, value) ({ \
-    uint32_t byte_index = (offset) & 0x3; \
-    uint32_t dword = pci_read_config_space((address), (offset) & PCI_OFFSET_MASK); \
-    /* First, we create a mask which will mask out the bits we are modifying */ \
-    /* by shifting 0xFF left by `byte_index * 8` and the inverting it, then */ \
-    /* we mask the read dword with that mask and finally we OR in the new values */ \
-    /* shifted by `byte_index * 8` which places it at the right spot in the dword */ \
-    uint32_t new_dword = (dword & ~(0xFF << (byte_index * 8))) | (((value) & 0xFF) << (byte_index * 8)); \
-    pci_write_config_space((address), (offset) & PCI_OFFSET_MASK, new_dword); \
-})
-
-#define pci_write16(address, offset, value) ({ \
-    uint32_t byte_index = (offset) & 0x2; \
-    uint32_t dword = pci_read_config_space((address), (offset) & PCI_OFFSET_MASK); \
-    /* This works similarly, except we use 0xFFFF because we work with a word */ \
-    /* here instead of a single byte, and the `word_index` can either be 0 or 2 */ \
-    uint32_t new_dword = (dword & ~(0xFFFF << (byte_index * 8))) | (((value) & 0xFFFF) << (byte_index * 8)); \
-    pci_write_config_space((address), (offset) & PCI_OFFSET_MASK, new_dword); \
-})
-
-// And here, again, no bit fiddling required as this matches the granularity of pci_write_config_space
-#define pci_write32(address, offset, value) pci_write_config_space((address), (offset), (value))
-
-// Read PCI config space of the given device at given offset.
-// Offset will be aligned down to the nearest multiple of 4.
-uint32_t pci_read_config_space(struct pci_address *address, uint32_t offset);
-
-// Write PCI config space of the given device at given offset.
-// Offset will be aligned down to the nearest multiple of 4.
-void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32_t value);
+// Write `size` bytes (1, 2 or 4) to PCI config space.
+void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32_t size, uint32_t value);
 
 // Discover PCI root buses and devices behind them.
 bool pci_early_initialize(void);

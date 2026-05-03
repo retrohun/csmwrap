@@ -586,8 +586,9 @@ again:
             return;
         }
 
-        // Re-enable memory/IO decode and bus master (for regular BARs)
-        cmd |= (1 << 0) | (1 << 1) | (1 << 2);
+        // Restore the device's original command register; we only cleared
+        // MEM_EN above, so writing the saved value back puts I/O space and
+        // bus master back to whatever the firmware had set them to.
         pci_write16(&address, 0x04, cmd);
 
         return;

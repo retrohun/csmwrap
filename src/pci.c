@@ -217,12 +217,15 @@ static uint16_t pci_find_ext_capability(struct pci_address *address, uint16_t ca
 // Patch the Supported Sizes bitmap for cards that ship a malformed REBAR
 // capability. The bitmap is post-shift: bit N means size 2^(N+20) bytes.
 static uint32_t pci_rebar_apply_quirks(uint16_t vendor, uint16_t device,
+                                       uint16_t subsystem_vendor, uint8_t revision,
                                        uint8_t bar, uint32_t supported_sizes) {
-    // Sapphire Radeon RX 5600 XT Pulse (1002:731f) advertises only the
-    // 16/32/64 MB bits for BAR 0, while the silicon actually decodes 256 MB
-    // through 8 GB. Returning the unpatched bitmap would have us shrink BAR 0
-    // to 64 MB, which is below what the card's VBIOS expects.
-    if (vendor == 0x1002 && device == 0x731f && bar == 0 && supported_sizes == 0x70) {
+    // Sapphire Radeon RX 5600 XT Pulse (1002:731f, ssvid 1da2, rev C1)
+    // advertises only the 256/512/1024 MB bits for BAR 0, while the silicon
+    // actually decodes up to 8 GB. Mirrors Linux's quirk in
+    // drivers/pci/rebar.c, including the subsystem vendor and revision
+    // restrictions that keep it from misfiring on other 5600 XT boards.
+    if (vendor == 0x1002 && device == 0x731f && subsystem_vendor == 0x1da2
+        && revision == 0xC1 && bar == 0 && supported_sizes == 0x700) {
         return 0x3f00;
     }
     return supported_sizes;
@@ -263,7 +266,10 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
 
         uint16_t vendor = pci_read16(address, 0x00);
         uint16_t device = pci_read16(address, 0x02);
-        supported_sizes = pci_rebar_apply_quirks(vendor, device, bar_index, supported_sizes);
+        uint16_t subsystem_vendor = pci_read16(address, 0x2c);
+        uint8_t revision = pci_read8(address, 0x08);
+        supported_sizes = pci_rebar_apply_quirks(vendor, device, subsystem_vendor,
+                                                 revision, bar_index, supported_sizes);
 
 
         // Find the largest size that fits within max_size

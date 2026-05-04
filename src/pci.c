@@ -124,6 +124,17 @@ void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32
     pci_write(address, offset & ~(size - 1), size, value);
 }
 
+void pci_enable_for_oprom(uint8_t bus, uint8_t devfn) {
+    struct pci_address address = {
+        .segment  = 0,
+        .bus      = bus,
+        .slot     = devfn >> 3,
+        .function = devfn & 0x7,
+    };
+    uint16_t cmd = pci_read16(&address, 0x04);
+    pci_write16(&address, 0x04, cmd | (1 << 0) | (1 << 1) | (1 << 2));
+}
+
 // Parse MCFG table and populate ECAM regions
 static bool parse_mcfg_table(void) {
     uacpi_table tbl;
@@ -627,6 +638,8 @@ again:
         // Restore the device's original command register; we only cleared
         // MEM_EN above, so writing the saved value back puts I/O space and
         // bus master back to whatever the firmware had set them to.
+        // Devices with associated option ROMs are force-enabled separately
+        // via pci_enable_for_oprom before dispatch.
         pci_write16(&address, 0x04, cmd);
 
         return;

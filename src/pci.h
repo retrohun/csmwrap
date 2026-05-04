@@ -110,4 +110,10 @@ void pci_write_config_space(struct pci_address *address, uint32_t offset, uint32
 bool pci_early_initialize(void);
 bool pci_late_initialize(void);
 
+// Force I/O space, memory space, and bus master enable on a device whose
+// option ROM is about to be dispatched. Legacy oproms expect their device
+// fully usable; UEFI may have left bus master off (or even MEM/IO off if
+// the device was inactive in UEFI).
+void pci_enable_for_oprom(uint8_t bus, uint8_t devfn);
+
 #endif

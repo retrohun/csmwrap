@@ -768,6 +768,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
                         NULL,
                         0);
 
+    if (priv.vga_pci_io != NULL) {
+        pci_enable_for_oprom(priv.vga_pci_bus, priv.vga_pci_devfn);
+    }
+
     memset(&Regs, 0, sizeof(EFI_IA32_REGISTER_SET));
     Regs.X.AX = Legacy16DispatchOprom;
     Regs.X.ES = EFI_SEGMENT(&priv.low_stub->vga_oprom_table);

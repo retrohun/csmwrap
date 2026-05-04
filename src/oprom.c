@@ -1,6 +1,7 @@
 #include <efi.h>
 #include <csmwrap.h>
 #include <oprom.h>
+#include <pci.h>
 #include <video.h>
 #include <config.h>
 #include <printf.h>
@@ -256,6 +257,8 @@ void oprom_dispatch_all(struct csmwrap_priv *priv, struct pci_oprom_list *list)
         printf("OpROM: dispatching %04x:%04x at seg %04x (%u bytes)\n",
                info->vendor_id, info->device_id,
                table->OpromSegment, (unsigned)info->rom_size);
+
+        pci_enable_for_oprom(info->bus, info->devfn);
 
         EFI_IA32_REGISTER_SET Regs;
         memset(&Regs, 0, sizeof(Regs));
